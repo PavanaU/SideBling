@@ -38,6 +38,11 @@
       </div>
     </main>
 
+    <!-- Rive Loader -->
+    <div class="rive-loader">
+      <canvas ref="riveCanvas" width="200" height="200"></canvas>
+    </div>
+
     <!-- Results Section -->
     <section v-if="generatedIdeas" class="results-section">
       <div class="results-container">
@@ -60,7 +65,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
+import { gsap } from 'gsap'
+import { Rive } from '@rive-app/canvas'
 
 const imgLogoSvg = '/assets/logo.svg'
 const imgDollar = '/assets/dollar.svg'
@@ -79,6 +86,8 @@ const hasValue = computed(() => value.value.trim().length > 0)
 const isLoading = ref(false)
 const generatedIdeas = ref('')
 const submittedHobby = ref('')
+const riveCanvas = ref<HTMLCanvasElement | null>(null)
+const riveInstance = ref<any>(null)
 
 async function generateIdeas() {
   if (!value.value.trim()) {
@@ -86,8 +95,43 @@ async function generateIdeas() {
     return
   }
 
+  // Animate hero content and footer cards out
+  const tl = gsap.timeline()
+  tl.to('.hero-content', {
+    y: 500,
+    duration: 0.6,
+    ease: 'power2.inOut'
+  })
+  tl.to('.example-text', {
+    opacity: 0,
+    duration: 0.4,
+    ease: 'power2.out'
+  }, '-=0.6') // Start at the same time as the previous animation
+  tl.to('.footer-cards .card', {
+    y: 300,
+    duration: 0.5,
+    ease: 'power2.inOut',
+    stagger: 0.1
+  }, '-=0.4') // Start slightly before the hero animation ends
+  
+  // Wait for animations to complete
+  await tl
+  
+  // Small delay then fade in the loader
+  await new Promise(resolve => setTimeout(resolve, 100))
+  
+  // Fade in the loader
+  await gsap.to('.rive-loader', {
+    opacity: 1,
+    duration: 0.5,
+    ease: 'power2.out'
+  })
+
   isLoading.value = true
   submittedHobby.value = value.value
+  
+  // Small delay to ensure loader is visible
+  await new Promise(resolve => setTimeout(resolve, 300))
   
   try {
     const response = await $fetch('/api/generate-ideas', {
@@ -98,10 +142,22 @@ async function generateIdeas() {
     })
 
     if (response.success) {
+      // Fade out the loader before showing results
+      await gsap.to('.rive-loader', {
+        opacity: 0,
+        duration: 0.3,
+        ease: 'power2.out'
+      })
       generatedIdeas.value = response.ideas || ''
     }
   } catch (error: any) {
     console.error('Error generating ideas:', error)
+    // Fade out the loader on error
+    await gsap.to('.rive-loader', {
+      opacity: 0,
+      duration: 0.3,
+      ease: 'power2.out'
+    })
     alert(error.data?.statusMessage || 'Failed to generate ideas. Please check your API key setup.')
   } finally {
     isLoading.value = false
@@ -133,6 +189,32 @@ function onFocus() {
 function onBlur() {
   isFocused.value = false
 }
+
+onMounted(async () => {
+  // Wait a tick to ensure canvas is in DOM
+  await nextTick()
+  
+  // Initialize Rive animation
+  if (riveCanvas.value) {
+    try {
+      riveInstance.value = new Rive({
+        src: '/loader.riv',
+        canvas: riveCanvas.value,
+        autoplay: true,
+        stateMachines: 'State Machine 1', // Use the default state machine if available
+        onLoad: () => {
+          console.log('Rive loader loaded successfully')
+          riveInstance.value?.resizeDrawingSurfaceToCanvas()
+        },
+        onLoadError: (error) => {
+          console.error('Failed to load Rive animation:', error)
+        }
+      })
+    } catch (error) {
+      console.error('Error initializing Rive:', error)
+    }
+  }
+})
 </script>
 
 <style scoped>
@@ -179,31 +261,31 @@ function onBlur() {
 
 .hero-panel {
   width: 100%;
-  max-width: 900px;
+  max-width: 940px;
+  overflow: hidden;
 }
 
 .hero-content {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: fit-content;
+  display: inline-block;
 }
 
 .cta-container {
-  display: flex;
+  display: inline-flex;
   flex-direction: row;
-  align-items: center;
+  align-items: stretch;
   gap: 15px;
   background: #00A160;
   border-radius: 15px;
   padding: 15px;
+  width: max-content;
 }
 
 .textfield {
   position: relative;
   background: transparent;
   border-radius: 6px;
-  min-width: 680px;
+  width: 620px;
+  flex-shrink: 0;
 }
 .textfield-input {
   width: 100%;
@@ -213,7 +295,7 @@ function onBlur() {
   color: #fff;
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   font-weight: 600;
-  font-size: 26px;
+  font-size: 24px;
   line-height: 20px;
   padding: 53px 21px 13px 21px;
 }
@@ -246,7 +328,7 @@ function onBlur() {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 33px 21px;
+  padding: 32px 30px;
   border-radius: 6px;
   background: #fff;
   color: #009358;
@@ -257,6 +339,7 @@ function onBlur() {
   border: none;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .cta-button img { width: 28px; height: 28px; }
 
@@ -266,7 +349,6 @@ function onBlur() {
   font-size: 16px;
   color: rgba(255, 255, 255, 0.8);
   margin-top: 15px;
-  align-self: flex-start;
 }
 
 /* Footer cards pinned bottom */
@@ -276,6 +358,7 @@ function onBlur() {
   display: flex;
   gap: 30px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 20px 30px;
 }
 .card {
@@ -401,6 +484,55 @@ function onBlur() {
 .cta-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+/* Rive Loader */
+.rive-loader {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rive-loader canvas {
+  display: block;
+  width: 600px;
+  height: 600px;
+}
+
+/* Fallback loader styles */
+.fallback-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  color: #fff;
+}
+
+.fallback-loader p {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style>
 
